@@ -1,0 +1,1204 @@
+-- Fluxino | Premium Script Hub
+-- Rivals Hub + MM2 Hub
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+
+--// Colors
+local Colors = {
+	Background = Color3.fromRGB(16, 16, 20),
+	Surface = Color3.fromRGB(24, 24, 30),
+	Surface2 = Color3.fromRGB(32, 32, 40),
+	Accent = Color3.fromRGB(0, 200, 180),
+	Text = Color3.fromRGB(235, 235, 240),
+	TextDim = Color3.fromRGB(140, 140, 155),
+	Stroke = Color3.fromRGB(45, 45, 55),
+	Danger = Color3.fromRGB(255, 80, 90)
+}
+
+--// ===================== RIVALS HUB SCRIPT =====================
+local RivalsHubScript = [[
+-- Rivals | Grok Hub V2 (Verbesserter Aimbot)
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Rivals | Grok Hub V2",
+    LoadingTitle = "Rivals Script lädt...",
+    LoadingSubtitle = "Besserer Aimbot + ESP + Fly",
+    ConfigurationSaving = {Enabled = true, FolderName = "GrokRivals", FileName = "ConfigV2"},
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+getgenv().ESPEnabled = false
+getgenv().AimbotEnabled = false
+getgenv().SilentAim = false
+getgenv().ShowFOV = true
+getgenv().StickyAim = true
+getgenv().FlyEnabled = false
+getgenv().Noclip = false
+getgenv().InfJump = false
+getgenv().KillAura = false
+getgenv().Fullbright = false
+getgenv().AntiAFK = false
+getgenv().FlySpeed = 50
+getgenv().WalkSpeed = 16
+getgenv().JumpPower = 50
+getgenv().AimbotFOV = 150
+getgenv().AimSmooth = 0.18
+getgenv().KillAuraRange = 20
+getgenv().AimKey = Enum.UserInputType.MouseButton2
+
+local ESPObjects = {}
+local Connections = {}
+local FOVCircle = nil
+local CurrentTarget = nil
+local flyBV, flyBG
+
+local function clearESP()
+    for _, v in pairs(ESPObjects) do
+        if v.highlight and v.highlight.Parent then v.highlight:Destroy() end
+        if v.billboard and v.billboard.Parent then v.billboard:Destroy() end
+    end
+    ESPObjects = {}
+end
+
+local function createESP(player)
+    if player == LocalPlayer or ESPObjects[player] then return end
+    if not player.Character then return end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "RivalsESP"
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillColor = Color3.fromRGB(255, 60, 60)
+    highlight.OutlineColor = Color3.fromRGB(255, 30, 30)
+    highlight.Parent = player.Character
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "RivalsName"
+    billboard.Size = UDim2.new(0, 140, 0, 40)
+    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = player.Character:FindFirstChild("Head") or player.Character
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.TextScaled = true
+    text.Font = Enum.Font.GothamBold
+    text.TextStrokeTransparency = 0.4
+    text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    text.Parent = billboard
+    ESPObjects[player] = {highlight = highlight, billboard = billboard, text = text}
+end
+
+local function updateESP()
+    if not getgenv().ESPEnabled then clearESP() return end
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            createESP(player)
+            local obj = ESPObjects[player]
+            if obj then
+                local hum = player.Character:FindFirstChild("Humanoid")
+                local hp = hum and math.floor(hum.Health) or 0
+                local maxhp = hum and math.floor(hum.MaxHealth) or 100
+                obj.text.Text = player.Name .. " | " .. hp .. "/" .. maxhp
+                if player.Character:FindFirstChild("Head") then obj.billboard.Adornee = player.Character.Head end
+                if hp > 70 then obj.highlight.FillColor = Color3.fromRGB(50, 255, 50)
+                elseif hp > 30 then obj.highlight.FillColor = Color3.fromRGB(255, 200, 50)
+                else obj.highlight.FillColor = Color3.fromRGB(255, 50, 50) end
+            end
+        end
+    end
+end
+
+local function createFOVCircle()
+    if FOVCircle then pcall(function() FOVCircle:Remove() end) end
+    if Drawing then
+        FOVCircle = Drawing.new("Circle")
+        FOVCircle.Thickness = 1.5
+        FOVCircle.NumSides = 64
+        FOVCircle.Radius = getgenv().AimbotFOV
+        FOVCircle.Filled = false
+        FOVCircle.Transparency = 0.75
+        FOVCircle.Color = Color3.fromRGB(255, 40, 40)
+        FOVCircle.Visible = false
+    end
+end
+
+local function updateFOVCircle()
+    if FOVCircle then
+        FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
+        FOVCircle.Radius = getgenv().AimbotFOV
+        FOVCircle.Visible = getgenv().ShowFOV and getgenv().AimbotEnabled
+    end
+end
+
+local function getBestTarget()
+    local closest = nil
+    local shortest = getgenv().AimbotFOV
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local head = player.Character:FindFirstChild("Head") or player.Character.HumanoidRootPart
+            local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+            if onScreen then
+                local distToCrosshair = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                if distToCrosshair < shortest then
+                    if getgenv().StickyAim and CurrentTarget == player then
+                        shortest = distToCrosshair * 0.65
+                        closest = player
+                    else
+                        shortest = distToCrosshair
+                        closest = player
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function doAimbot()
+    if not getgenv().AimbotEnabled then CurrentTarget = nil return end
+    local holding = UserInputService:IsMouseButtonPressed(getgenv().AimKey) or getgenv().SilentAim
+    if not holding then CurrentTarget = nil return end
+    local target = getBestTarget()
+    CurrentTarget = target
+    if target and target.Character then
+        local head = target.Character:FindFirstChild("Head") or target.Character.HumanoidRootPart
+        if head then
+            local goalCFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+            if getgenv().SilentAim then Camera.CFrame = goalCFrame
+            else Camera.CFrame = Camera.CFrame:Lerp(goalCFrame, getgenv().AimSmooth) end
+        end
+    end
+end
+
+local function doKillAura()
+    if not getgenv().KillAura then return end
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = player.Character:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local dist = (root.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if dist <= getgenv().KillAuraRange then
+                    root.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
+                end
+            end
+        end
+    end
+end
+
+local function flingPlayer(target)
+    if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local oldPos = root.CFrame
+    local targetRoot = target.Character.HumanoidRootPart
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Parent = root
+    local spin = Instance.new("BodyAngularVelocity")
+    spin.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    spin.AngularVelocity = Vector3.new(0, 99999, 0)
+    spin.Parent = root
+    for i = 1, 12 do
+        root.CFrame = targetRoot.CFrame
+        bv.Velocity = Vector3.new(0, 200, 0) + (targetRoot.Position - root.Position).Unit * 200
+        task.wait(0.03)
+    end
+    bv:Destroy()
+    spin:Destroy()
+    root.CFrame = oldPos
+end
+
+local function flingAll()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then flingPlayer(p) task.wait(0.05) end
+    end
+end
+
+local function toggleFly(state)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+    local humanoid = char:FindFirstChild("Humanoid")
+    if state then
+        if humanoid then humanoid.PlatformStand = true end
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        flyBV.Velocity = Vector3.zero
+        flyBV.Parent = root
+        flyBG = Instance.new("BodyGyro")
+        flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        flyBG.P = 9e4
+        flyBG.Parent = root
+        Connections.Fly = RunService.RenderStepped:Connect(function()
+            if not getgenv().FlyEnabled then return end
+            local cam = Camera.CFrame
+            local move = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+            flyBV.Velocity = move.Magnitude > 0 and move.Unit * getgenv().FlySpeed or Vector3.zero
+            flyBG.CFrame = cam
+        end)
+    else
+        if Connections.Fly then Connections.Fly:Disconnect() end
+        if flyBV then flyBV:Destroy() end
+        if flyBG then flyBG:Destroy() end
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end
+
+local function toggleNoclip(state)
+    if Connections.Noclip then Connections.Noclip:Disconnect() end
+    if state then
+        Connections.Noclip = RunService.Stepped:Connect(function()
+            if LocalPlayer.Character then
+                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
+        end)
+    end
+end
+
+UserInputService.JumpRequest:Connect(function()
+    if getgenv().InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+local function toggleFullbright(state)
+    if state then
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(140, 140, 140)
+    else
+        Lighting.Brightness = 1
+        Lighting.FogEnd = 1000
+        Lighting.GlobalShadows = true
+    end
+end
+
+local function toggleAntiAFK(state)
+    if Connections.AntiAFK then Connections.AntiAFK:Disconnect() end
+    if state then
+        local VirtualUser = game:GetService("VirtualUser")
+        Connections.AntiAFK = LocalPlayer.Idled:Connect(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end
+end
+
+local function applySpeed()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.WalkSpeed = getgenv().WalkSpeed
+        char.Humanoid.JumpPower = getgenv().JumpPower
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function() task.wait(0.6) applySpeed() end)
+
+local MainTab = Window:CreateTab("Haupt", 4483362458)
+local CombatTab = Window:CreateTab("Combat", 4483362458)
+local MovementTab = Window:CreateTab("Movement", 4483362458)
+local FlingTab = Window:CreateTab("Fling", 4483362458)
+local MiscTab = Window:CreateTab("Misc", 4483362458)
+
+MainTab:CreateSection("ESP")
+MainTab:CreateToggle({Name = "ESP (Spieler + Health)", CurrentValue = false, Flag = "ESP", Callback = function(Value)
+    getgenv().ESPEnabled = Value
+    if Value then Connections.ESP = RunService.RenderStepped:Connect(updateESP)
+    else if Connections.ESP then Connections.ESP:Disconnect() end clearESP() end
+end})
+
+MainTab:CreateSection("Aimbot (Verbessert)")
+MainTab:CreateToggle({Name = "Aimbot aktivieren", CurrentValue = false, Flag = "Aimbot", Callback = function(Value)
+    getgenv().AimbotEnabled = Value
+    if Value then
+        createFOVCircle()
+        if not Connections.Aimbot then
+            Connections.Aimbot = RunService.RenderStepped:Connect(function() doAimbot() updateFOVCircle() end)
+        end
+        Rayfield:Notify({Title = "Aimbot", Content = "An – Rechtsklick halten zum Zielen", Duration = 3})
+    else
+        if Connections.Aimbot then Connections.Aimbot:Disconnect() Connections.Aimbot = nil end
+        if FOVCircle then FOVCircle.Visible = false end
+        CurrentTarget = nil
+    end
+end})
+
+MainTab:CreateToggle({Name = "FOV Kreis anzeigen", CurrentValue = true, Flag = "ShowFOV", Callback = function(Value)
+    getgenv().ShowFOV = Value
+    if FOVCircle then FOVCircle.Visible = Value and getgenv().AimbotEnabled end
+end})
+MainTab:CreateToggle({Name = "Silent Aim (stärker)", CurrentValue = false, Flag = "SilentAim", Callback = function(Value) getgenv().SilentAim = Value end})
+MainTab:CreateToggle({Name = "Sticky Aim (hält Ziel besser)", CurrentValue = true, Flag = "StickyAim", Callback = function(Value) getgenv().StickyAim = Value end})
+MainTab:CreateSlider({Name = "Aimbot FOV", Range = {60, 400}, Increment = 5, CurrentValue = 150, Flag = "AimFOV", Callback = function(Value)
+    getgenv().AimbotFOV = Value
+    if FOVCircle then FOVCircle.Radius = Value end
+end})
+MainTab:CreateSlider({Name = "Smoothness (niedriger = stärker)", Range = {0.05, 0.40}, Increment = 0.01, CurrentValue = 0.18, Flag = "AimSmooth", Callback = function(Value) getgenv().AimSmooth = Value end})
+
+CombatTab:CreateSection("Kill Aura")
+CombatTab:CreateToggle({Name = "Kill Aura", CurrentValue = false, Flag = "KillAura", Callback = function(Value)
+    getgenv().KillAura = Value
+    if Value then Connections.KillAura = RunService.Heartbeat:Connect(doKillAura)
+    else if Connections.KillAura then Connections.KillAura:Disconnect() end end
+end})
+CombatTab:CreateSlider({Name = "Kill Aura Range", Range = {10, 50}, Increment = 1, CurrentValue = 20, Flag = "AuraRange", Callback = function(Value) getgenv().KillAuraRange = Value end})
+
+MovementTab:CreateSection("Speed & Jump")
+MovementTab:CreateSlider({Name = "WalkSpeed", Range = {16, 200}, Increment = 1, CurrentValue = 16, Flag = "WalkSpeed", Callback = function(Value) getgenv().WalkSpeed = Value applySpeed() end})
+MovementTab:CreateSlider({Name = "JumpPower", Range = {50, 200}, Increment = 5, CurrentValue = 50, Flag = "JumpPower", Callback = function(Value) getgenv().JumpPower = Value applySpeed() end})
+MovementTab:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Flag = "InfJump", Callback = function(Value) getgenv().InfJump = Value end})
+
+MovementTab:CreateSection("Fly & Noclip")
+MovementTab:CreateToggle({Name = "Fly", CurrentValue = false, Flag = "Fly", Callback = function(Value) getgenv().FlyEnabled = Value toggleFly(Value) end})
+MovementTab:CreateSlider({Name = "Fly Speed", Range = {20, 150}, Increment = 5, CurrentValue = 50, Flag = "FlySpeed", Callback = function(Value) getgenv().FlySpeed = Value end})
+MovementTab:CreateToggle({Name = "Noclip", CurrentValue = false, Flag = "Noclip", Callback = function(Value) getgenv().Noclip = Value toggleNoclip(Value) end})
+
+FlingTab:CreateSection("Fling")
+FlingTab:CreateButton({Name = "Fling ALL", Callback = function()
+    Rayfield:Notify({Title = "Fling", Content = "Flinge alle Spieler...", Duration = 2})
+    flingAll()
+end})
+FlingTab:CreateButton({Name = "Spielerliste anzeigen", Callback = function()
+    local names = {}
+    for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(names, p.Name) end end
+    print("Spieler: " .. table.concat(names, ", "))
+    Rayfield:Notify({Title = "Spieler", Content = "Siehe Console / Output", Duration = 3})
+end})
+
+MiscTab:CreateSection("Visuals")
+MiscTab:CreateToggle({Name = "Fullbright", CurrentValue = false, Flag = "Fullbright", Callback = function(Value) getgenv().Fullbright = Value toggleFullbright(Value) end})
+MiscTab:CreateSlider({Name = "FOV", Range = {70, 120}, Increment = 1, CurrentValue = 70, Flag = "FOV", Callback = function(Value) Camera.FieldOfView = Value end})
+
+MiscTab:CreateSection("Utility")
+MiscTab:CreateToggle({Name = "Anti AFK", CurrentValue = false, Flag = "AntiAFK", Callback = function(Value) getgenv().AntiAFK = Value toggleAntiAFK(Value) end})
+MiscTab:CreateButton({Name = "Rejoin Server", Callback = function() game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer) end})
+
+createFOVCircle()
+Rayfield:Notify({Title = "Rivals Grok Hub V2 geladen!", Content = "Verbesserter Aimbot + FOV Kreis bereit", Duration = 5})
+print("✅ Rivals Grok Hub V2 geladen")
+]]
+
+--// ===================== MM2 HUB SCRIPT =====================
+local MM2HubScript = [[
+-- MM2 Grok Hub V2 | Erweiterte Version
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "MM2 | Grok Hub V2",
+    LoadingTitle = "MM2 Script lädt...",
+    LoadingSubtitle = "ESP • Combat • Movement • Roles",
+    ConfigurationSaving = {Enabled = true, FolderName = "GrokMM2", FileName = "ConfigV2"},
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+getgenv().ESPEnabled = false
+getgenv().AutoGun = false
+getgenv().AutoKill = false
+getgenv().FlyEnabled = false
+getgenv().Noclip = false
+getgenv().InfJump = false
+getgenv().Fullbright = false
+getgenv().AntiAFK = false
+getgenv().KillAura = false
+getgenv().AutoShoot = false
+getgenv().GunNotify = false
+getgenv().SelectedPlayer = nil
+getgenv().FlySpeed = 50
+getgenv().WalkSpeed = 16
+getgenv().JumpPower = 50
+getgenv().KillAuraRange = 15
+
+local ESPObjects = {}
+local Connections = {}
+
+local function getRole(player)
+    if not player or not player.Character then return "Innocent" end
+    local char = player.Character
+    local backpack = player:FindFirstChild("Backpack")
+    if char:FindFirstChild("Knife") or (backpack and backpack:FindFirstChild("Knife")) then return "Murderer" end
+    if char:FindFirstChild("Gun") or (backpack and backpack:FindFirstChild("Gun")) then return "Sheriff" end
+    return "Innocent"
+end
+
+local function getMyRole()
+    return getRole(LocalPlayer)
+end
+
+local function clearESP()
+    for _, v in pairs(ESPObjects) do
+        if v.highlight and v.highlight.Parent then v.highlight:Destroy() end
+        if v.billboard and v.billboard.Parent then v.billboard:Destroy() end
+    end
+    ESPObjects = {}
+end
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    if ESPObjects[player] then return end
+    if not player.Character then return end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "MM2ESP"
+    highlight.FillTransparency = 0.45
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = player.Character
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "MM2Name"
+    billboard.Size = UDim2.new(0, 120, 0, 35)
+    billboard.StudsOffset = Vector3.new(0, 3.2, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = player.Character:FindFirstChild("Head") or player.Character
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.TextScaled = true
+    text.Font = Enum.Font.GothamBold
+    text.TextStrokeTransparency = 0.4
+    text.Parent = billboard
+    ESPObjects[player] = {highlight = highlight, billboard = billboard, text = text}
+end
+
+local function updateESP()
+    if not getgenv().ESPEnabled then clearESP() return end
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            createESP(player)
+            local role = getRole(player)
+            local obj = ESPObjects[player]
+            if obj and obj.highlight then
+                if role == "Murderer" then
+                    obj.highlight.FillColor = Color3.fromRGB(255, 40, 40)
+                    obj.highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+                    obj.text.Text = "🔪 MURDER | " .. player.Name
+                    obj.text.TextColor3 = Color3.fromRGB(255, 60, 60)
+                elseif role == "Sheriff" then
+                    obj.highlight.FillColor = Color3.fromRGB(40, 120, 255)
+                    obj.highlight.OutlineColor = Color3.fromRGB(0, 80, 255)
+                    obj.text.Text = "🔫 SHERIFF | " .. player.Name
+                    obj.text.TextColor3 = Color3.fromRGB(60, 140, 255)
+                else
+                    obj.highlight.FillColor = Color3.fromRGB(40, 220, 40)
+                    obj.highlight.OutlineColor = Color3.fromRGB(0, 180, 0)
+                    obj.text.Text = player.Name
+                    obj.text.TextColor3 = Color3.fromRGB(80, 255, 80)
+                end
+                if player.Character:FindFirstChild("Head") then obj.billboard.Adornee = player.Character.Head end
+            end
+        end
+    end
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if (obj.Name == "GunDrop" or obj.Name == "DroppedGun") and not obj:FindFirstChild("GunESP") then
+            local hl = Instance.new("Highlight")
+            hl.Name = "GunESP"
+            hl.FillColor = Color3.fromRGB(255, 255, 0)
+            hl.OutlineColor = Color3.fromRGB(255, 200, 0)
+            hl.FillTransparency = 0.25
+            hl.Parent = obj
+        end
+    end
+end
+
+local function grabGun()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
+    local root = char.HumanoidRootPart
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj.Name == "GunDrop" or obj.Name == "DroppedGun" then
+            local target = obj:IsA("BasePart") and obj or obj:FindFirstChild("Handle")
+            if target then
+                if firetouchinterest then
+                    pcall(function() firetouchinterest(root, target, 0) firetouchinterest(root, target, 1) end)
+                else
+                    root.CFrame = target.CFrame + Vector3.new(0, 3, 0)
+                end
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function doKillAura()
+    if not getgenv().KillAura and not getgenv().AutoKill then return end
+    if getMyRole() ~= "Murderer" then return end
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+    local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
+    if knife then knife.Parent = char end
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = player.Character:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local dist = (root.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if getgenv().AutoKill or dist <= getgenv().KillAuraRange then
+                    root.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 1.5)
+                    if knife and knife:FindFirstChild("Handle") and firetouchinterest then
+                        pcall(function()
+                            firetouchinterest(knife.Handle, player.Character.HumanoidRootPart, 0)
+                            firetouchinterest(knife.Handle, player.Character.HumanoidRootPart, 1)
+                        end)
+                    end
+                    task.wait(0.08)
+                end
+            end
+        end
+    end
+end
+
+local function flingPlayer(target)
+    if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local oldPos = root.CFrame
+    local targetRoot = target.Character.HumanoidRootPart
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Velocity = Vector3.zero
+    bv.Parent = root
+    local spin = Instance.new("BodyAngularVelocity")
+    spin.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    spin.AngularVelocity = Vector3.new(0, 99999, 0)
+    spin.Parent = root
+    for i = 1, 12 do
+        root.CFrame = targetRoot.CFrame
+        bv.Velocity = (targetRoot.Position - root.Position).Unit * 250 + Vector3.new(0, 150, 0)
+        task.wait(0.025)
+    end
+    bv:Destroy()
+    spin:Destroy()
+    task.wait(0.1)
+    root.CFrame = oldPos
+end
+
+local function flingAll()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then flingPlayer(player) task.wait(0.05) end
+    end
+end
+
+local flyBV, flyBG
+local function toggleFly(state)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+    local humanoid = char:FindFirstChild("Humanoid")
+    if state then
+        if humanoid then humanoid.PlatformStand = true end
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        flyBV.Velocity = Vector3.zero
+        flyBV.Parent = root
+        flyBG = Instance.new("BodyGyro")
+        flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        flyBG.P = 9e4
+        flyBG.Parent = root
+        Connections.Fly = RunService.RenderStepped:Connect(function()
+            if not getgenv().FlyEnabled then return end
+            local cam = Camera.CFrame
+            local move = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+            if move.Magnitude > 0 then flyBV.Velocity = move.Unit * getgenv().FlySpeed else flyBV.Velocity = Vector3.zero end
+            flyBG.CFrame = cam
+        end)
+    else
+        if Connections.Fly then Connections.Fly:Disconnect() end
+        if flyBV then flyBV:Destroy() end
+        if flyBG then flyBG:Destroy() end
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end
+
+local function toggleNoclip(state)
+    if Connections.Noclip then Connections.Noclip:Disconnect() end
+    if state then
+        Connections.Noclip = RunService.Stepped:Connect(function()
+            if LocalPlayer.Character then
+                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
+        end)
+    end
+end
+
+UserInputService.JumpRequest:Connect(function()
+    if getgenv().InfJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+local function toggleFullbright(state)
+    if state then
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+    else
+        Lighting.Brightness = 1
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 1000
+        Lighting.GlobalShadows = true
+    end
+end
+
+local function toggleAntiAFK(state)
+    if Connections.AntiAFK then Connections.AntiAFK:Disconnect() end
+    if state then
+        local VirtualUser = game:GetService("VirtualUser")
+        Connections.AntiAFK = LocalPlayer.Idled:Connect(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end
+end
+
+local function applySpeed()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.WalkSpeed = getgenv().WalkSpeed
+        char.Humanoid.JumpPower = getgenv().JumpPower
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function() task.wait(0.5) applySpeed() end)
+
+local MainTab = Window:CreateTab("Haupt", 4483362458)
+local CombatTab = Window:CreateTab("Combat", 4483362458)
+local MovementTab = Window:CreateTab("Movement", 4483362458)
+local RolesTab = Window:CreateTab("Rollen", 4483362458)
+local FlingTab = Window:CreateTab("Fling", 4483362458)
+local MiscTab = Window:CreateTab("Misc", 4483362458)
+
+MainTab:CreateSection("ESP")
+MainTab:CreateToggle({Name = "ESP (Murder / Sheriff / Innocent + Gun)", CurrentValue = false, Flag = "ESP", Callback = function(Value)
+    getgenv().ESPEnabled = Value
+    if Value then Connections.ESP = RunService.RenderStepped:Connect(updateESP)
+    else if Connections.ESP then Connections.ESP:Disconnect() end clearESP() end
+end})
+
+MainTab:CreateSection("Gun")
+MainTab:CreateToggle({Name = "Auto Bring Gun", CurrentValue = false, Flag = "AutoGun", Callback = function(Value)
+    getgenv().AutoGun = Value
+    if Value then Connections.AutoGun = RunService.Heartbeat:Connect(function() if getgenv().AutoGun then grabGun() end end)
+    else if Connections.AutoGun then Connections.AutoGun:Disconnect() end end
+end})
+MainTab:CreateButton({Name = "Jetzt Gun holen", Callback = function()
+    if grabGun() then Rayfield:Notify({Title = "Erfolg", Content = "Waffe geholt!", Duration = 2})
+    else Rayfield:Notify({Title = "Info", Content = "Keine Waffe gefunden", Duration = 2}) end
+end})
+MainTab:CreateToggle({Name = "Gun Drop Notify", CurrentValue = false, Flag = "GunNotify", Callback = function(Value) getgenv().GunNotify = Value end})
+
+CombatTab:CreateSection("Murderer Features")
+CombatTab:CreateToggle({Name = "Auto Kill (Teleport + Attack)", CurrentValue = false, Flag = "AutoKill", Callback = function(Value)
+    getgenv().AutoKill = Value
+    if Value then
+        Connections.AutoKill = RunService.Heartbeat:Connect(doKillAura)
+        Rayfield:Notify({Title = "Auto Kill", Content = "Nur als Murderer aktiv!", Duration = 3})
+    else if Connections.AutoKill then Connections.AutoKill:Disconnect() end end
+end})
+CombatTab:CreateToggle({Name = "Kill Aura (naher Bereich)", CurrentValue = false, Flag = "KillAura", Callback = function(Value)
+    getgenv().KillAura = Value
+    if Value and not Connections.AutoKill then Connections.AutoKill = RunService.Heartbeat:Connect(doKillAura) end
+end})
+CombatTab:CreateSlider({Name = "Kill Aura Range", Range = {8, 30}, Increment = 1, CurrentValue = 15, Flag = "AuraRange", Callback = function(Value) getgenv().KillAuraRange = Value end})
+
+CombatTab:CreateSection("Sheriff Features")
+CombatTab:CreateToggle({Name = "Auto Shoot Murderer (einfach)", CurrentValue = false, Flag = "AutoShoot", Callback = function(Value)
+    getgenv().AutoShoot = Value
+    Rayfield:Notify({Title = "Auto Shoot", Content = "Zielt auf Murderer wenn du Sheriff bist", Duration = 3})
+end})
+
+MovementTab:CreateSection("Speed & Jump")
+MovementTab:CreateSlider({Name = "WalkSpeed", Range = {16, 200}, Increment = 1, CurrentValue = 16, Flag = "WalkSpeed", Callback = function(Value) getgenv().WalkSpeed = Value applySpeed() end})
+MovementTab:CreateSlider({Name = "JumpPower", Range = {50, 200}, Increment = 5, CurrentValue = 50, Flag = "JumpPower", Callback = function(Value) getgenv().JumpPower = Value applySpeed() end})
+MovementTab:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Flag = "InfJump", Callback = function(Value) getgenv().InfJump = Value end})
+
+MovementTab:CreateSection("Fly & Noclip")
+MovementTab:CreateToggle({Name = "Fly", CurrentValue = false, Flag = "Fly", Callback = function(Value) getgenv().FlyEnabled = Value toggleFly(Value) end})
+MovementTab:CreateSlider({Name = "Fly Speed", Range = {20, 150}, Increment = 5, CurrentValue = 50, Flag = "FlySpeed", Callback = function(Value) getgenv().FlySpeed = Value end})
+MovementTab:CreateToggle({Name = "Noclip", CurrentValue = false, Flag = "Noclip", Callback = function(Value) getgenv().Noclip = Value toggleNoclip(Value) end})
+
+RolesTab:CreateSection("Aktuelle Rolle")
+RolesTab:CreateButton({Name = "Meine Rolle anzeigen", Callback = function()
+    Rayfield:Notify({Title = "Deine Rolle", Content = getMyRole(), Duration = 4})
+end})
+RolesTab:CreateSection("Innocent / Hero")
+RolesTab:CreateButton({Name = "TP zum Gun Drop", Callback = function()
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj.Name == "GunDrop" or obj.Name == "DroppedGun" then
+            local target = obj:IsA("BasePart") and obj or obj:FindFirstChild("Handle")
+            if target and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = target.CFrame + Vector3.new(0, 3, 0)
+                Rayfield:Notify({Title = "TP", Content = "Zum Gun geteleportet", Duration = 2})
+                return
+            end
+        end
+    end
+    Rayfield:Notify({Title = "Info", Content = "Kein Gun Drop gefunden", Duration = 2})
+end})
+RolesTab:CreateSection("Murderer Extra")
+RolesTab:CreateButton({Name = "Knife equippen", Callback = function()
+    local knife = LocalPlayer.Backpack:FindFirstChild("Knife") or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Knife"))
+    if knife then knife.Parent = LocalPlayer.Character Rayfield:Notify({Title = "Knife", Content = "Ausgerüstet", Duration = 2}) end
+end})
+
+FlingTab:CreateSection("Fling")
+FlingTab:CreateButton({Name = "Fling ALL", Callback = function()
+    Rayfield:Notify({Title = "Fling", Content = "Flinge alle...", Duration = 2})
+    flingAll()
+end})
+FlingTab:CreateButton({Name = "Fling Murderer", Callback = function()
+    for _, p in pairs(Players:GetPlayers()) do
+        if getRole(p) == "Murderer" then flingPlayer(p) Rayfield:Notify({Title = "Fling", Content = "Murderer geflingt", Duration = 2}) return end
+    end
+    Rayfield:Notify({Title = "Info", Content = "Kein Murderer gefunden", Duration = 2})
+end})
+FlingTab:CreateButton({Name = "Fling Sheriff", Callback = function()
+    for _, p in pairs(Players:GetPlayers()) do
+        if getRole(p) == "Sheriff" then flingPlayer(p) Rayfield:Notify({Title = "Fling", Content = "Sheriff geflingt", Duration = 2}) return end
+    end
+    Rayfield:Notify({Title = "Info", Content = "Kein Sheriff gefunden", Duration = 2})
+end})
+FlingTab:CreateButton({Name = "Spielerliste + Rollen anzeigen", Callback = function()
+    local list = {}
+    for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(list, p.Name .. " [" .. getRole(p) .. "]") end end
+    print(table.concat(list, "\n"))
+    Rayfield:Notify({Title = "Spieler", Content = "Siehe Output / Console", Duration = 3})
+end})
+
+MiscTab:CreateSection("Visuals")
+MiscTab:CreateToggle({Name = "Fullbright", CurrentValue = false, Flag = "Fullbright", Callback = function(Value) getgenv().Fullbright = Value toggleFullbright(Value) end})
+MiscTab:CreateSlider({Name = "FOV", Range = {70, 120}, Increment = 1, CurrentValue = 70, Flag = "FOV", Callback = function(Value) Camera.FieldOfView = Value end})
+
+MiscTab:CreateSection("Utility")
+MiscTab:CreateToggle({Name = "Anti AFK", CurrentValue = false, Flag = "AntiAFK", Callback = function(Value) getgenv().AntiAFK = Value toggleAntiAFK(Value) end})
+MiscTab:CreateButton({Name = "TP zum Lobby", Callback = function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.Health = 0
+        Rayfield:Notify({Title = "Lobby", Content = "Reset für Lobby", Duration = 2})
+    end
+end})
+MiscTab:CreateButton({Name = "Rejoin Server", Callback = function() game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer) end})
+
+Rayfield:Notify({Title = "MM2 Grok Hub V2 geladen!", Content = "Alle Features bereit. Viel Spaß!", Duration = 5})
+print("✅ MM2 Grok Hub V2 geladen")
+]]
+
+--// ===================== GUI =====================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Fluxino"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 560, 0, 420)
+Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.BackgroundColor3 = Colors.Background
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = Main
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Colors.Stroke
+MainStroke.Thickness = 1.2
+MainStroke.Parent = Main
+
+Main.Size = UDim2.new(0, 0, 0, 0)
+Main.BackgroundTransparency = 1
+TweenService:Create(Main, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+	Size = UDim2.new(0, 560, 0, 420),
+	BackgroundTransparency = 0
+}):Play()
+
+-- Title Bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 42)
+TitleBar.BackgroundColor3 = Colors.Surface
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = Main
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 14)
+TitleCorner.Parent = TitleBar
+
+local TitleFix = Instance.new("Frame")
+TitleFix.Size = UDim2.new(1, 0, 0, 16)
+TitleFix.Position = UDim2.new(0, 0, 1, -16)
+TitleFix.BackgroundColor3 = Colors.Surface
+TitleFix.BorderSizePixel = 0
+TitleFix.Parent = TitleBar
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -100, 1, 0)
+Title.Position = UDim2.new(0, 18, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Fluxino"
+Title.TextColor3 = Colors.Text
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 17
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TitleBar
+
+local Version = Instance.new("TextLabel")
+Version.Size = UDim2.new(0, 60, 1, 0)
+Version.Position = UDim2.new(0, 95, 0, 0)
+Version.BackgroundTransparency = 1
+Version.Text = "v1.0"
+Version.TextColor3 = Colors.TextDim
+Version.Font = Enum.Font.Gotham
+Version.TextSize = 12
+Version.TextXAlignment = Enum.TextXAlignment.Left
+Version.Parent = TitleBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 36, 0, 36)
+CloseBtn.Position = UDim2.new(1, -40, 0.5, -18)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "×"
+CloseBtn.TextColor3 = Colors.TextDim
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 22
+CloseBtn.Parent = TitleBar
+
+CloseBtn.MouseButton1Click:Connect(function()
+	TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		Size = UDim2.new(0, 0, 0, 0),
+		BackgroundTransparency = 1
+	}):Play()
+	task.wait(0.26)
+	ScreenGui:Destroy()
+end)
+
+CloseBtn.MouseEnter:Connect(function()
+	TweenService:Create(CloseBtn, TweenInfo.new(0.15), {TextColor3 = Colors.Danger}):Play()
+end)
+CloseBtn.MouseLeave:Connect(function()
+	TweenService:Create(CloseBtn, TweenInfo.new(0.15), {TextColor3 = Colors.TextDim}):Play()
+end)
+
+-- Tabs
+local TabBar = Instance.new("Frame")
+TabBar.Size = UDim2.new(1, -30, 0, 36)
+TabBar.Position = UDim2.new(0, 15, 0, 52)
+TabBar.BackgroundTransparency = 1
+TabBar.Parent = Main
+
+local function createTab(name, position)
+	local tab = Instance.new("TextButton")
+	tab.Name = name
+	tab.Size = UDim2.new(0, 120, 1, 0)
+	tab.Position = position
+	tab.BackgroundColor3 = Colors.Surface2
+	tab.Text = name
+	tab.TextColor3 = Colors.TextDim
+	tab.Font = Enum.Font.GothamMedium
+	tab.TextSize = 13
+	tab.AutoButtonColor = false
+	tab.Parent = TabBar
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = tab
+	return tab
+end
+
+local ExecutorTab = createTab("Executor", UDim2.new(0, 0, 0, 0))
+local HubTab = createTab("Script Hub", UDim2.new(0, 130, 0, 0))
+
+-- Contents
+local ExecutorContent = Instance.new("Frame")
+ExecutorContent.Name = "ExecutorContent"
+ExecutorContent.Size = UDim2.new(1, -30, 1, -150)
+ExecutorContent.Position = UDim2.new(0, 15, 0, 100)
+ExecutorContent.BackgroundTransparency = 1
+ExecutorContent.Parent = Main
+
+local HubContent = Instance.new("ScrollingFrame")
+HubContent.Name = "HubContent"
+HubContent.Size = UDim2.new(1, -30, 1, -150)
+HubContent.Position = UDim2.new(0, 15, 0, 100)
+HubContent.BackgroundTransparency = 1
+HubContent.BorderSizePixel = 0
+HubContent.ScrollBarThickness = 4
+HubContent.ScrollBarImageColor3 = Colors.Accent
+HubContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+HubContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+HubContent.Visible = false
+HubContent.Parent = Main
+
+local HubList = Instance.new("UIListLayout")
+HubList.SortOrder = Enum.SortOrder.LayoutOrder
+HubList.Padding = UDim.new(0, 12)
+HubList.Parent = HubContent
+
+-- Executor
+local ScriptBox = Instance.new("TextBox")
+ScriptBox.Name = "ScriptBox"
+ScriptBox.Size = UDim2.new(1, 0, 1, -55)
+ScriptBox.BackgroundColor3 = Colors.Surface
+ScriptBox.TextColor3 = Colors.Text
+ScriptBox.PlaceholderText = "-- Paste or write your script here..."
+ScriptBox.PlaceholderColor3 = Colors.TextDim
+ScriptBox.Font = Enum.Font.Code
+ScriptBox.TextSize = 14
+ScriptBox.TextXAlignment = Enum.TextXAlignment.Left
+ScriptBox.TextYAlignment = Enum.TextYAlignment.Top
+ScriptBox.ClearTextOnFocus = false
+ScriptBox.MultiLine = true
+ScriptBox.TextWrapped = false
+ScriptBox.Text = ""
+ScriptBox.ClipsDescendants = true
+ScriptBox.Parent = ExecutorContent
+
+local BoxCorner = Instance.new("UICorner")
+BoxCorner.CornerRadius = UDim.new(0, 10)
+BoxCorner.Parent = ScriptBox
+
+local BoxStroke = Instance.new("UIStroke")
+BoxStroke.Color = Colors.Stroke
+BoxStroke.Thickness = 1
+BoxStroke.Parent = ScriptBox
+
+local ButtonRow = Instance.new("Frame")
+ButtonRow.Size = UDim2.new(1, 0, 0, 40)
+ButtonRow.Position = UDim2.new(0, 0, 1, -42)
+ButtonRow.BackgroundTransparency = 1
+ButtonRow.Parent = ExecutorContent
+
+local function createButton(text, color, position, width)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, width, 1, 0)
+	btn.Position = position
+	btn.BackgroundColor3 = color
+	btn.Text = text
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.AutoButtonColor = false
+	btn.Parent = ButtonRow
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = btn
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.15), {
+			BackgroundColor3 = Color3.new(math.min(color.R * 1.15, 1), math.min(color.G * 1.15, 1), math.min(color.B * 1.15, 1))
+		}):Play()
+	end)
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = color}):Play()
+	end)
+	return btn
+end
+
+local ExecuteBtn = createButton("Execute", Colors.Accent, UDim2.new(0, 0, 0, 0), 140)
+local ClearBtn = createButton("Clear", Colors.Surface2, UDim2.new(0, 150, 0, 0), 100)
+
+ExecuteBtn.MouseButton1Click:Connect(function()
+	local source = ScriptBox.Text
+	if source == "" then return end
+	local success, err = pcall(function() loadstring(source)() end)
+	if not success then warn("[Fluxino] Error:", err) end
+end)
+
+ClearBtn.MouseButton1Click:Connect(function()
+	ScriptBox.Text = ""
+end)
+
+-- Script Card Function
+local function createScriptCard(title, description, scriptSource)
+	local card = Instance.new("Frame")
+	card.Size = UDim2.new(1, -6, 0, 110)
+	card.BackgroundColor3 = Colors.Surface
+	card.BorderSizePixel = 0
+	card.Parent = HubContent
+
+	local cardCorner = Instance.new("UICorner")
+	cardCorner.CornerRadius = UDim.new(0, 10)
+	cardCorner.Parent = card
+
+	local cardStroke = Instance.new("UIStroke")
+	cardStroke.Color = Colors.Stroke
+	cardStroke.Thickness = 1
+	cardStroke.Parent = card
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Size = UDim2.new(1, -20, 0, 28)
+	titleLabel.Position = UDim2.new(0, 14, 0, 10)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = title
+	titleLabel.TextColor3 = Colors.Text
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 15
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.Parent = card
+
+	local descLabel = Instance.new("TextLabel")
+	descLabel.Size = UDim2.new(1, -20, 0, 20)
+	descLabel.Position = UDim2.new(0, 14, 0, 36)
+	descLabel.BackgroundTransparency = 1
+	descLabel.Text = description
+	descLabel.TextColor3 = Colors.TextDim
+	descLabel.Font = Enum.Font.Gotham
+	descLabel.TextSize = 12
+	descLabel.TextXAlignment = Enum.TextXAlignment.Left
+	descLabel.Parent = card
+
+	local execBtn = Instance.new("TextButton")
+	execBtn.Size = UDim2.new(0, 130, 0, 32)
+	execBtn.Position = UDim2.new(0, 14, 1, -42)
+	execBtn.BackgroundColor3 = Colors.Accent
+	execBtn.Text = "Execute Script"
+	execBtn.TextColor3 = Color3.fromRGB(15, 15, 20)
+	execBtn.Font = Enum.Font.GothamBold
+	execBtn.TextSize = 13
+	execBtn.AutoButtonColor = false
+	execBtn.Parent = card
+
+	local execCorner = Instance.new("UICorner")
+	execCorner.CornerRadius = UDim.new(0, 7)
+	execCorner.Parent = execBtn
+
+	local copyBtn = Instance.new("TextButton")
+	copyBtn.Size = UDim2.new(0, 120, 0, 32)
+	copyBtn.Position = UDim2.new(0, 154, 1, -42)
+	copyBtn.BackgroundColor3 = Colors.Surface2
+	copyBtn.Text = "Copy Script"
+	copyBtn.TextColor3 = Colors.Text
+	copyBtn.Font = Enum.Font.GothamMedium
+	copyBtn.TextSize = 13
+	copyBtn.AutoButtonColor = false
+	copyBtn.Parent = card
+
+	local copyCorner = Instance.new("UICorner")
+	copyCorner.CornerRadius = UDim.new(0, 7)
+	copyCorner.Parent = copyBtn
+
+	execBtn.MouseEnter:Connect(function()
+		TweenService:Create(execBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(0, 230, 200)}):Play()
+	end)
+	execBtn.MouseLeave:Connect(function()
+		TweenService:Create(execBtn, TweenInfo.new(0.15), {BackgroundColor3 = Colors.Accent}):Play()
+	end)
+
+	copyBtn.MouseEnter:Connect(function()
+		TweenService:Create(copyBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
+	end)
+	copyBtn.MouseLeave:Connect(function()
+		TweenService:Create(copyBtn, TweenInfo.new(0.15), {BackgroundColor3 = Colors.Surface2}):Play()
+	end)
+
+	execBtn.MouseButton1Click:Connect(function()
+		local success, err = pcall(function()
+			loadstring(scriptSource)()
+		end)
+		if not success then
+			warn("[Fluxino] Execute Error:", err)
+		end
+	end)
+
+	copyBtn.MouseButton1Click:Connect(function()
+		if setclipboard then
+			setclipboard(scriptSource)
+			copyBtn.Text = "Copied!"
+			task.wait(1.2)
+			copyBtn.Text = "Copy Script"
+		else
+			warn("[Fluxino] setclipboard not supported")
+		end
+	end)
+
+	return card
+end
+
+-- Script Boxes
+createScriptCard(
+	"Rivals Hub",
+	"Aimbot • ESP • Fly • KillAura • Fling • Fullbright",
+	RivalsHubScript
+)
+
+createScriptCard(
+	"Murder Mystery 2 Hub",
+	"ESP • Auto Kill • Auto Gun • Fly • Fling • Roles",
+	MM2HubScript
+)
+
+-- Tab Switching
+local function setActiveTab(tabName)
+	local function style(tab, active)
+		if active then
+			TweenService:Create(tab, TweenInfo.new(0.2), {
+				BackgroundColor3 = Colors.Accent,
+				TextColor3 = Color3.fromRGB(15, 15, 20)
+			}):Play()
+		else
+			TweenService:Create(tab, TweenInfo.new(0.2), {
+				BackgroundColor3 = Colors.Surface2,
+				TextColor3 = Colors.TextDim
+			}):Play()
+		end
+	end
+	style(ExecutorTab, tabName == "Executor")
+	style(HubTab, tabName == "Script Hub")
+	ExecutorContent.Visible = (tabName == "Executor")
+	HubContent.Visible = (tabName == "Script Hub")
+end
+
+ExecutorTab.MouseButton1Click:Connect(function() setActiveTab("Executor") end)
+HubTab.MouseButton1Click:Connect(function() setActiveTab("Script Hub") end)
+setActiveTab("Executor")
+
+print("[Fluxino] Loaded with Rivals Hub + MM2 Hub")
